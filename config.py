@@ -1,6 +1,8 @@
 from flask_jwt_extended import JWTManager
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 import os
 
 app = Flask(__name__)
@@ -18,3 +20,7 @@ app.config.update(
 
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
+
+engine = create_engine(app.config['SQLALCHEMY_DATABASE_URI'], echo=True)
+Session = sessionmaker(bind=engine)
+session = Session()

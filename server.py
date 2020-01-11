@@ -5,15 +5,21 @@ from threading import Thread
 from PIL import Image
 from time import time, sleep
 from check_realtime import parseImg
+from initial_set import initialize
 from flask_jwt_extended import (create_access_token, create_refresh_token, 
 jwt_required, jwt_refresh_token_required, get_jwt_identity, get_raw_jwt)
-from models import UserModel
+from models import UserModel, PostureModel
 from config import app, db, jwt
+from ML import Classifier
+import pandas as pd
+import numpy as np
+import traceback
 import os
 import shutil
 import io
 import asyncio
 import glob
+import json
 	
 sess = Session()
 sess.init_app(app)
@@ -21,7 +27,8 @@ sess.init_app(app)
 UPLOAD_FOLDER = './uploaded/'
 PARSE_FOLDER = './parsed/'
 ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
-MAX_COUNT = 5
+MAX_COUNT = 30
+THRESHOLD = 1.5
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['PARSE_FOLDER'] = PARSE_FOLDER
@@ -38,6 +45,112 @@ def delete_files(folder):
 def allowed_file(filename):
     return '.' in filename and \
     	filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def jsonLoad(path):
+    with open(path) as f:
+        return json.load(f)
+
+def pdStrToFloat(datagram):
+    print(datagram)
+    datagram.eye_distance.astype('float64')
+    datagram.head_slope.astype('float64')
+    datagram.right_shoulder_neck.astype('float64')
+    datagram.left_shoulder_neck.astype('float64')
+    datagram.shoulder_slope.astype('float64')
+    datagram.shoulder_width.astype('float64')
+
+@app.route('/initialSet', methods = ['POST'])
+@jwt_required
+def initial_set():
+    identity = get_raw_jwt()['identity']
+    print(identity)
+    data = None
+    files = request.files
+    if 'image' not in files:
+        print("File not in request.file")
+        return redirect(request.url)
+    file = files['image']
+    userid = UserModel.find_by_username(identity).id
+    if file:
+        try:
+            img = Image.open(file)
+            img.save(os.path.join(app.config['UPLOAD_FOLDER']+identity+'/', 'initial.jpg'))
+            data = initialize(os.path.join(app.config['UPLOAD_FOLDER']+identity+'/', 'initial.jpg'), identity)
+            new_posture = PostureModel(
+                uid = userid,
+                normalPosture = json.dumps(data)
+            )
+            new_posture.save_to_db()
+
+        except Exception as e:
+            print(e)
+            print(traceback.format_exc())
+            return 'Error in initialization', 500
+
+        return {'message': 'Success'}, 200
+
+@app.route('/parse', methods = ['GET'])
+@jwt_required
+def parse_data():
+    identity = get_raw_jwt()['identity']
+     
+    try:
+        folderCount = len(glob.glob(app.config['UPLOAD_FOLDER']+identity+'/*.jpg'))
+        print("2 Minutes")
+        parseImg(app.config['UPLOAD_FOLDER']+identity+'/', identity)
+        delete_files(app.config['UPLOAD_FOLDER']+identity+'/')
+        
+        normalPosture = json.loads(UserModel.find_posture_data(identity)[-1][1].normalPosture)
+        normalSeries = pd.Series(normalPosture['quantitative'][0])
+        normalSeries = normalSeries.astype('float64')
+    except Exception as e:
+        print(e)
+        print(traceback.format_exc())
+        return {"message": "Failure"}, 500
+
+    jsonFiles = glob.glob(app.config['PARSE_FOLDER']+identity+'/json/*.json')
+    if 'initial.json' in jsonFiles:
+        jsonFiles.remove('initial.json')
+    folderCount = len(jsonFiles)
+    
+    data = pd.DataFrame()
+    for i, _file in enumerate(jsonFiles):
+        try:
+            jsonFile = jsonLoad(_file)
+            jsonFile = jsonFile['quantitative'][0]  
+        except Exception as e:
+            print(e)
+            folderCount -= 1
+            continue
+        
+        data = data.append(pd.DataFrame(jsonFile, index=[i]))
+    
+    data = data.astype('float64')
+    # Centering Data on Normal Posture
+    data -= normalSeries
+    # standardization
+    data = (data - np.mean(data, axis = 0)) / np.std(data, axis = 0, ddof = 1)
+    predicted = Classifier.Rf(data)
+    
+    total = len(predicted)
+    normal = (predicted == 0).sum() / total
+    FHP = (predicted == 1).sum() / total
+    scoliosis = (predicted == 2).sum() / total
+    slouch = (predicted == 3).sum() / total
+    postures = np.array([normal, FHP, scoliosis, slouch])
+    print("Normal: {}, FHP: {}, Scoliosis: {}, Slouch: {}".format(normal, FHP, scoliosis, slouch))
+    postureVal = np.amax(postures)
+    postureIdx = np.where(postures == np.amax(postures))[0][0]
+    
+    print("____________")
+    # Threshold for normal posture
+    if postureVal < THRESHOLD * normal:
+        postureVal = normal
+        postureIdx = 0
+
+    print("Posture: {} - {}".format(postureIdx, postureVal))
+    return {"message": "Success", "MFP": str(postureIdx), "MFP_val": str(postureVal), 
+            "normal": str(normal), "FHP": str(FHP), "scoliosis": str(scoliosis), "slouch": str(slouch)}, 200
 
 @app.route('/upload/<frame>', methods = ['POST'])
 @jwt_required
@@ -61,14 +174,6 @@ def upload_file(frame):
                 print(frame)
                 count = frame.split('_')[1]
                 print(count)
-
-                if int(count) % MAX_COUNT == 0:
-                    folderCount = len(glob.glob(app.config['UPLOAD_FOLDER']+identity+'/*.jpg'))
-                    print(folderCount)
-                    if  folderCount >= MAX_COUNT:
-                        print("2 Minutes")
-                        parseImg(app.config['UPLOAD_FOLDER']+identity+'/', identity)
-                        delete_files(app.config['UPLOAD_FOLDER']+identity+'/')
 
                 return jsonify({"success": "true", "count": str(int(count) % MAX_COUNT)})
 
@@ -111,12 +216,13 @@ def userLogin():
 
         if not os.path.exists(app.config['UPLOAD_FOLDER']+data['username']):
             os.makedirs(app.config['UPLOAD_FOLDER']+data['username'])
-        
         if not os.path.exists(app.config['PARSE_FOLDER']+data['username']):
             os.makedirs(app.config['PARSE_FOLDER']+data['username'])
-            os.makedirs(app.config['PARSE_FOLDER']+data['username']+'/json')
+        if not os.path.exists(app.config['PARSE_FOLDER']+data['username']+'/image'):
             os.makedirs(app.config['PARSE_FOLDER']+data['username']+'/image')
-        
+        if not os.path.exists(app.config['PARSE_FOLDER']+data['username']+'/json'):
+            os.makedirs(app.config['PARSE_FOLDER']+data['username']+'/json')
+
         return {'message': 'Logged in as {}'.format(current_user.username), 
                 'access_token': access_token, 
                 'refresh_token': refresh_token}
