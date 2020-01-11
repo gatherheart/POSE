@@ -216,12 +216,18 @@ def userLogin():
 
         if not os.path.exists(app.config['UPLOAD_FOLDER']+data['username']):
             os.makedirs(app.config['UPLOAD_FOLDER']+data['username'])
-        if not os.path.exists(app.config['PARSE_FOLDER']+data['username']):
-            os.makedirs(app.config['PARSE_FOLDER']+data['username'])
+        else:
+            delete_files(app.config['UPLOAD_FOLDER']+data['username']+'/')
+
         if not os.path.exists(app.config['PARSE_FOLDER']+data['username']+'/image'):
             os.makedirs(app.config['PARSE_FOLDER']+data['username']+'/image')
+        else:
+            delete_files(app.config['UPLOAD_FOLDER']+data['username']+'/image/')
+
         if not os.path.exists(app.config['PARSE_FOLDER']+data['username']+'/json'):
             os.makedirs(app.config['PARSE_FOLDER']+data['username']+'/json')
+        else:
+            delete_files(app.config['UPLOAD_FOLDER']+data['username']+'/json/')
 
         return {'message': 'Logged in as {}'.format(current_user.username), 
                 'access_token': access_token, 

@@ -17,7 +17,7 @@ def distance(p0, p1):
 
 def slope(p0, p1):
     try:
-        return abs(p1[0]-p0[0])/(p1[1]-p0[1])
+        return (p1[0]-p0[0])/(p1[1]-p0[1])
     except ZeroDivisionError:
         return 0
 
