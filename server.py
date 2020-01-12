@@ -28,7 +28,7 @@ UPLOAD_FOLDER = './uploaded/'
 PARSE_FOLDER = './parsed/'
 ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
 MAX_COUNT = 30
-THRESHOLD = 1.5
+THRESHOLD = 1.3
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['PARSE_FOLDER'] = PARSE_FOLDER
@@ -76,16 +76,20 @@ def initial_set():
             img = Image.open(file)
             img.save(os.path.join(app.config['UPLOAD_FOLDER']+identity+'/', 'initial.jpg'))
             data = initialize(os.path.join(app.config['UPLOAD_FOLDER']+identity+'/', 'initial.jpg'), identity)
-            new_posture = PostureModel(
-                uid = userid,
-                normalPosture = json.dumps(data)
-            )
-            new_posture.save_to_db()
-
+        
         except Exception as e:
             print(e)
             print(traceback.format_exc())
             return 'Error in initialization', 500
+
+        try:
+            db.session.query(UserModel).filter_by(id=userid).update({'normalPosture': json.dumps(data)})
+        except Exception as e:         
+            print(e)
+            print(traceback.format_exc())
+        finally:
+            new_posture.save_to_db()
+
 
         return {'message': 'Success'}, 200
 
@@ -93,10 +97,13 @@ def initial_set():
 @jwt_required
 def parse_data():
     identity = get_raw_jwt()['identity']
-     
+    userid = UserModel.find_by_username(identity).id
+
     try:
         folderCount = len(glob.glob(app.config['UPLOAD_FOLDER']+identity+'/*.jpg'))
-        print("2 Minutes")
+
+        delete_files(app.config['PARSE_FOLDER']+identity+'/json/')
+        delete_files(app.config['PARSE_FOLDER']+identity+'/image/')
         parseImg(app.config['UPLOAD_FOLDER']+identity+'/', identity)
         delete_files(app.config['UPLOAD_FOLDER']+identity+'/')
         
@@ -142,15 +149,24 @@ def parse_data():
     postureVal = np.amax(postures)
     postureIdx = np.where(postures == np.amax(postures))[0][0]
     
-    print("____________")
     # Threshold for normal posture
     if postureVal < THRESHOLD * normal:
         postureVal = normal
         postureIdx = 0
 
     print("Posture: {} - {}".format(postureIdx, postureVal))
-    return {"message": "Success", "MFP": str(postureIdx), "MFP_val": str(postureVal), 
-            "normal": str(normal), "FHP": str(FHP), "scoliosis": str(scoliosis), "slouch": str(slouch)}, 200
+    result =  {"message": "Success", "MFP": str(postureIdx), "MFP_val": str(postureVal), 
+            "normal": str(normal), "FHP": str(FHP), "scoliosis": str(scoliosis), "slouch": str(slouch)}
+    
+    try:
+        db.session.query(PostureModel).filter_by(uid=userid).update({'postureData': json.dumps(result)})
+    except Exception as e:         
+        print(traceback.format_exc())
+        print(e)
+    finally:
+        new_posture.save_to_db()
+
+    return result, 200
 
 @app.route('/upload/<frame>', methods = ['POST'])
 @jwt_required

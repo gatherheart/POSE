@@ -8,6 +8,9 @@ class UserModel(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     username = db.Column(db.String(120), unique = True, nullable = False)
     password = db.Column(db.String(120), nullable = False)
+    normalPosture = db.Column(db.JSON, default={'eye_distance': '0', 'head_slope': '0',
+                                                'left_shoulder_neck': '0', 'right_shoulder_neck': '0',
+                                                'shoulder_width': '0', 'shoulder_slope': '0'})
     
     def save_to_db(self):
         db.session.add(self)
@@ -41,7 +44,6 @@ class PostureModel(db.Model):
     
     id = db.Column(db.Integer, primary_key = True)
     uid = db.Column(db.Integer, ForeignKey('users.id'))
-    normalPosture = db.Column(db.JSON, default={})
     postureData = db.Column(db.JSON, default={'Normal': '0', 'FHP': '0', 'Scoliosis': '0', 'Slouch': '0'})
     created = db.Column(db.DateTime, server_default=db.func.now())
 
