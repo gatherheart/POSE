@@ -51,7 +51,6 @@ def jsonLoad(path):
         return json.load(f)
 
 def pdStrToFloat(datagram):
-    print(datagram)
     datagram.eye_distance.astype('float64')
     datagram.head_slope.astype('float64')
     datagram.right_shoulder_neck.astype('float64')
@@ -70,7 +69,7 @@ def initial_set():
         print("File not in request.file")
         return redirect(request.url)
     file = files['image']
-    userid = UserModel.find_by_username(identity).id
+    user = UserModel.find_by_username(identity)
     if file:
         try:
             img = Image.open(file)
@@ -80,24 +79,23 @@ def initial_set():
         except Exception as e:
             print(e)
             print(traceback.format_exc())
-            return 'Error in initialization', 500
+            return {'message': 'Error in initialization'}, 500
 
         try:
-            db.session.query(UserModel).filter_by(id=userid).update({'normalPosture': json.dumps(data)})
+            user.normalPosture = json.dumps(data)
         except Exception as e:         
             print(e)
             print(traceback.format_exc())
+            return {'message': 'Failure'}, 500
         finally:
-            new_posture.save_to_db()
-
-
-        return {'message': 'Success'}, 200
+            user.save_to_db()
+            return {'message': 'Success'}, 200
 
 @app.route('/parse', methods = ['GET'])
 @jwt_required
 def parse_data():
     identity = get_raw_jwt()['identity']
-    userid = UserModel.find_by_username(identity).id
+    user = UserModel.find_by_username(identity)
 
     try:
         folderCount = len(glob.glob(app.config['UPLOAD_FOLDER']+identity+'/*.jpg'))
@@ -107,7 +105,7 @@ def parse_data():
         parseImg(app.config['UPLOAD_FOLDER']+identity+'/', identity)
         delete_files(app.config['UPLOAD_FOLDER']+identity+'/')
         
-        normalPosture = json.loads(UserModel.find_posture_data(identity)[-1][1].normalPosture)
+        normalPosture = json.loads(user.normalPosture)
         normalSeries = pd.Series(normalPosture['quantitative'][0])
         normalSeries = normalSeries.astype('float64')
     except Exception as e:
@@ -159,7 +157,10 @@ def parse_data():
             "normal": str(normal), "FHP": str(FHP), "scoliosis": str(scoliosis), "slouch": str(slouch)}
     
     try:
-        db.session.query(PostureModel).filter_by(uid=userid).update({'postureData': json.dumps(result)})
+        new_posture = PostureModel(
+            uid = user.id,
+            postureData = json.dumps(result)
+        )
     except Exception as e:         
         print(traceback.format_exc())
         print(e)

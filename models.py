@@ -1,6 +1,7 @@
 from config import db, session
 from passlib.hash import pbkdf2_sha256 as sha256
 from sqlalchemy import ForeignKey
+import json
 
 class UserModel(db.Model):
     __tablename__ = 'users'
@@ -8,9 +9,9 @@ class UserModel(db.Model):
     id = db.Column(db.Integer, primary_key = True)
     username = db.Column(db.String(120), unique = True, nullable = False)
     password = db.Column(db.String(120), nullable = False)
-    normalPosture = db.Column(db.JSON, default={'eye_distance': '0', 'head_slope': '0',
+    normalPosture = db.Column(db.JSON, default=json.dumps({'eye_distance': '0', 'head_slope': '0',
                                                 'left_shoulder_neck': '0', 'right_shoulder_neck': '0',
-                                                'shoulder_width': '0', 'shoulder_slope': '0'})
+                                                'shoulder_width': '0', 'shoulder_slope': '0'}))
     
     def save_to_db(self):
         db.session.add(self)
@@ -44,7 +45,7 @@ class PostureModel(db.Model):
     
     id = db.Column(db.Integer, primary_key = True)
     uid = db.Column(db.Integer, ForeignKey('users.id'))
-    postureData = db.Column(db.JSON, default={'Normal': '0', 'FHP': '0', 'Scoliosis': '0', 'Slouch': '0'})
+    postureData = db.Column(db.JSON, default=json.dumps({'Normal': '0', 'FHP': '0', 'Scoliosis': '0', 'Slouch': '0'}))
     created = db.Column(db.DateTime, server_default=db.func.now())
 
     def save_to_db(self):
