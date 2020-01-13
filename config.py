@@ -1,11 +1,13 @@
 from flask_jwt_extended import JWTManager
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import os
 
 app = Flask(__name__)
+CORS(app)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posture.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False

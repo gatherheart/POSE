@@ -10,6 +10,7 @@ from flask_jwt_extended import (create_access_token, create_refresh_token,
 jwt_required, jwt_refresh_token_required, get_jwt_identity, get_raw_jwt)
 from models import UserModel, PostureModel
 from config import app, db, jwt
+from flask_cors import CORS, cross_origin
 from ML import Classifier
 import pandas as pd
 import numpy as np
@@ -153,7 +154,7 @@ def parse_data():
         postureIdx = 0
 
     print("Posture: {} - {}".format(postureIdx, postureVal))
-    result =  {"message": "Success", "MFP": str(postureIdx), "MFP_val": str(postureVal), 
+    result =  {"MFP": str(postureIdx), "MFP_val": str(postureVal), 
             "normal": str(normal), "FHP": str(FHP), "scoliosis": str(scoliosis), "slouch": str(slouch)}
     
     try:
@@ -166,7 +167,8 @@ def parse_data():
         print(e)
     finally:
         new_posture.save_to_db()
-
+    
+    result['message'] = 'Success'
     return result, 200
 
 @app.route('/upload/<frame>', methods = ['POST'])
@@ -257,6 +259,33 @@ def userLogin():
 def hello_world():
     print(get_raw_jwt())
     return 'Hello World!'
+
+@app.route('/api/report', methods=['GET', 'OPTIONS'])
+@cross_origin(origin='*', headers=['Content-Type','Authorization'])
+@jwt_required
+def sendReport():
+    identity = get_raw_jwt()['identity']
+    user = UserModel.find_by_username(identity)
+    postures = PostureModel.find_by_userid(user.id) 
+    result = [0, 0, 0, 0] # normal, FHP, scoliosis, slouch
+    level = [1, 1, 1, 1] 
+    for posture in postures:
+        jsonData = json.loads(posture.postureData)
+        MFP = int(jsonData['MFP'])
+        result[MFP] += 1
+    
+    for idx, count in enumerate(result):
+        if idx == 0: 
+            continue
+        if count > 20:
+            level[idx] = 2 
+        if count > 50:
+            level[idx] = 3
+
+    return {'message': "Success", "Normal": str(result[0]), "FHP": str(result[1]),
+            "Scoliosis": str(result[2]), "Slouch": str(result[3]), "FHPLevel": str(level[1]),
+            "SlouchLevel": str(level[3]), "ScoliosisLevel": str(level[2])}, 200
+    
 
 if __name__ == "__main__":
 

@@ -21,16 +21,6 @@ class UserModel(db.Model):
     def find_by_username(cls, username):
         return cls.query.filter_by(username = username).first()
 
-    @classmethod
-    def find_posture_data(cls, username):
-        return session.query(
-                        UserModel, PostureModel
-                ).filter(
-                        UserModel.id == PostureModel.uid
-                ).filter(
-                        UserModel.username == username
-                ).all()
-
     @staticmethod
     def generate_hash(password):
         return sha256.hash(password)
@@ -47,6 +37,11 @@ class PostureModel(db.Model):
     uid = db.Column(db.Integer, ForeignKey('users.id'))
     postureData = db.Column(db.JSON, default=json.dumps({'Normal': '0', 'FHP': '0', 'Scoliosis': '0', 'Slouch': '0'}))
     created = db.Column(db.DateTime, server_default=db.func.now())
+    
+    @classmethod
+    def find_by_userid(cls, _id):
+        return cls.query.filter_by(uid = _id).all()
+
 
     def save_to_db(self):
         db.session.add(self)
